@@ -19,9 +19,9 @@
 #include <inttypes.h>
 #include <ctype.h>
 
-/*====================================================================*/
-/*          ****** DO NOT MODIFY ANYTHING FROM THIS LINE ******       */
-/* To avoid security error on Visual Studio */
+ /*====================================================================*/
+ /*          ****** DO NOT MODIFY ANYTHING FROM THIS LINE ******       */
+ /* To avoid security error on Visual Studio */
 #define _CRT_SECURE_NO_WARNINGS
 #pragma warning(disable : 4996)
 
@@ -67,7 +67,7 @@ struct cache_block {
 	unsigned int tag;		/* Tag */
 	unsigned int timestamp;	/* Timestamp or clock cycles to implement LRU */
 	unsigned char data[BYTES_PER_WORD * MAX_NR_WORDS_PER_BLOCK];
-							/* Each block holds 4 words */
+	/* Each block holds 4 words */
 };
 
 /* An 1-D array for cache blocks. */
@@ -108,7 +108,7 @@ static unsigned int cycles = 0;
  */
 static inline bool strmatch(char * const str, const char *expect)
 {
-    return (strlen(str) == strlen(expect)) && (strncmp(str, expect, strlen(expect)) == 0);
+	return (strlen(str) == strlen(expect)) && (strncmp(str, expect, strlen(expect)) == 0);
 }
 
 /**
@@ -140,7 +140,7 @@ static int log2_discrete(int n)
  *   To that end, you should look up the cache blocks to find the block
  *   containing the target address @addr. If exists, it's cache hit; return
  *   CACHE_HIT after updating the cache block's timestamp with @cycles.
- *   If not, replace the LRU cache block in the set. Should handle dirty blocks 
+ *   If not, replace the LRU cache block in the set. Should handle dirty blocks
  *   properly according to the write-back semantic.
  *
  * PARAMAMETERS
@@ -153,6 +153,32 @@ static int log2_discrete(int n)
 int load_word(unsigned int addr)
 {
 	/* TODO: Implement your load_word function */
+	int nr_offset, offset;
+	int nr_index, index, set;
+	int tag;
+
+	addr = (addr / 16) * 16;
+	nr_offset = log2_discrete(nr_words_per_block * 4);
+	nr_index = log2_discrete(nr_sets);
+	index = ((addr >> nr_offset) << (32 - nr_index)) >> (32 - nr_index);
+	tag = addr >> (nr_offset + nr_index);
+	set = index*2;
+	while (true) {
+		if (cache[set].valid == 1) set++;
+		else break;
+	}
+	cache[set].tag = tag;
+	for (int i = 0; i < 16; i++) {
+		cache[set].data[i] = memory[addr + i];
+
+	}
+	cache[set].valid = 1;
+	cache[set].timestamp = cycles;
+
+	printf("bits offset : %d,  bits index : %d \n", nr_offset, nr_index);
+	printf("offset : %d, index : %d \n", offset, index);
+	printf("tag : %d\n", tag);
+
 
 	return CACHE_MISS;
 }
@@ -202,9 +228,9 @@ static void __show_cache(void)
 {
 	for (int i = 0; i < nr_blocks; i++) {
 		fprintf(stderr, "[%3d] %c%c %8x %8u | ", i,
-				cache[i].valid == CB_VALID ? 'v' : ' ',
-				cache[i].dirty == CB_DIRTY ? 'd' : ' ',
-				cache[i].tag, cache[i].timestamp);
+			cache[i].valid == CB_VALID ? 'v' : ' ',
+			cache[i].dirty == CB_DIRTY ? 'd' : ' ',
+			cache[i].tag, cache[i].timestamp);
 		for (int j = 0; j < BYTES_PER_WORD * nr_words_per_block; j++) {
 			fprintf(stderr, "%02x", cache[i].data[j]);
 			if ((j + 1) % 4 == 0) fprintf(stderr, " ");
@@ -248,33 +274,34 @@ static void __fini_cache(void)
 
 static int __parse_command(char *command, int *nr_tokens, char *tokens[])
 {
-    char *curr = command;
-    int token_started = false;
-    *nr_tokens = 0;
+	char *curr = command;
+	int token_started = false;
+	*nr_tokens = 0;
 
-    while (*curr != '\0') {
-        if (isspace(*curr)) {
-            *curr = '\0';
-            token_started = false;
-        } else {
-            if (!token_started) {
-                tokens[*nr_tokens] = curr;
-                *nr_tokens += 1;
-                token_started = true;
-            }
-        }
-        curr++;
-    }
+	while (*curr != '\0') {
+		if (isspace(*curr)) {
+			*curr = '\0';
+			token_started = false;
+		}
+		else {
+			if (!token_started) {
+				tokens[*nr_tokens] = curr;
+				*nr_tokens += 1;
+				token_started = true;
+			}
+		}
+		curr++;
+	}
 
-    /* Exclude comments from tokens */
-    for (int i = 0; i < *nr_tokens; i++) {
-        if (strmatch(tokens[i], "//") || strmatch(tokens[i], "#")) {
-            *nr_tokens = i;
-            tokens[i] = NULL;
-        }
-    }
+	/* Exclude comments from tokens */
+	for (int i = 0; i < *nr_tokens; i++) {
+		if (strmatch(tokens[i], "//") || strmatch(tokens[i], "#")) {
+			*nr_tokens = i;
+			tokens[i] = NULL;
+		}
+	}
 
-    return 0;
+	return 0;
 }
 
 static void __simulate_cache(FILE *input)
@@ -299,14 +326,17 @@ static void __simulate_cache(FILE *input)
 		if (strmatch(argv[0], "show")) {
 			__show_cache();
 			goto next;
-		} else if (strmatch(argv[0], "dump")) {
+		}
+		else if (strmatch(argv[0], "dump")) {
 			addr = argc == 1 ? 0 : strtoimax(argv[1], NULL, 0) & 0xfffffffc;
 			__dump_memory(addr);
 			goto next;
-		} else if (strmatch(argv[0], "cycles")) {
+		}
+		else if (strmatch(argv[0], "cycles")) {
 			fprintf(stderr, "%3u %3u   %u\n", hits, misses, cycles);
 			goto next;
-		} else if (strmatch(argv[0], "quit")) {
+		}
+		else if (strmatch(argv[0], "quit")) {
 			break;
 		} if (strmatch(argv[0], "lw")) {
 			if (argc == 1) {
@@ -316,7 +346,8 @@ static void __simulate_cache(FILE *input)
 			}
 			addr = strtoimax(argv[1], NULL, 0);
 			hit = load_word(addr);
-		} else if (strmatch(argv[0], "sw")) {
+		}
+		else if (strmatch(argv[0], "sw")) {
 			if (argc != 3) {
 				printf("Wrong input for sw\n");
 				printf("Usage: sw <address to store> <word-size value to store>\n");
@@ -324,18 +355,20 @@ static void __simulate_cache(FILE *input)
 			}
 			addr = strtoimax(argv[1], NULL, 0);
 			hit = store_word(addr, strtoimax(argv[2], NULL, 0));
-		} else {
+		}
+		else {
 			goto next;
 		}
 
 		if (hit == CACHE_HIT) {
 			hits++;
 			cycles += cycles_hit;
-		} else {
+		}
+		else {
 			misses++;
 			cycles += cycles_miss;
 		}
-next:
+	next:
 		if (input == stdin) printf(">> ");
 	}
 
