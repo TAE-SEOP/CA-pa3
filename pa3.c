@@ -150,34 +150,71 @@ static int log2_discrete(int n)
  *   CACHE_HIT on cache hit, CACHE_MISS otherwise
  *
  */
+
+void reset(int set) {
+	for (int i = 0; i < 16; i++) {
+		cache[set].data[i] = 0;
+	}
+	cache[set].tag = 0;
+	cache[set].timestamp = 0;
+	cache[set].valid = 0;
+	cache[set].dirty = 0;
+	return;
+}
+
 int load_word(unsigned int addr)
 {
 	/* TODO: Implement your load_word function */
 	int nr_offset, offset;
 	int nr_index, index, set;
 	int tag;
-
-	addr = (addr / 16) * 16;
+	int count = 1;
+	int words = 1;
+	int hit = 1;
+	for (int i = 0; i < nr_words_per_block; i++) { 
+		words *= 2;
+	}
+	addr = (addr / words) * words;
+	printf("%d\n", addr);
 	nr_offset = log2_discrete(nr_words_per_block * 4);
 	nr_index = log2_discrete(nr_sets);
 	index = ((addr >> nr_offset) << (32 - nr_index)) >> (32 - nr_index);
 	tag = addr >> (nr_offset + nr_index);
-	set = index*2;
+	set = index*nr_ways;
+
 	while (true) {
-		if (cache[set].valid == 1) set++;
+		if (cache[set].valid == 1) { // 이미 사용 중이라면
+			if (cache[set].tag == tag) {  // tag가 같다면
+				for (int j = 0; j < words; j++) {  // data가 같은지 확인한다. address가 같은지 확인한다. 
+					if (cache[set].data[j] != memory[addr + j]) { // 다르다면 miss
+						hit = 0;
+						break;
+					}
+				}
+				if (hit == 1) {  // 같다면 timestamp를 최신화하고 hit를 반환한다.
+					cache[set].timestamp = cycles;
+					return CACHE_HIT;
+				}
+			}
+			if (count == nr_ways){  // set이 꽉차있다면
+			for (int i = 0; i < nr_ways; i++) {
+				set = (cache[set].timestamp > cache[i].timestamp) ? i : set;  // timestamp가 가장 작은 것을 지운다. LRU방식 
+			}
+			reset(set);  
+			break;
+		    }
+		else set++, count++;
+		}
 		else break;
 	}
 	cache[set].tag = tag;
-	for (int i = 0; i < 16; i++) {
+	for (int i = 0; i < words; i++) {
 		cache[set].data[i] = memory[addr + i];
 
 	}
 	cache[set].valid = 1;
 	cache[set].timestamp = cycles;
 
-	printf("bits offset : %d,  bits index : %d \n", nr_offset, nr_index);
-	printf("offset : %d, index : %d \n", offset, index);
-	printf("tag : %d\n", tag);
 
 
 	return CACHE_MISS;
