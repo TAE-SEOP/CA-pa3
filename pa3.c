@@ -151,14 +151,13 @@ static int log2_discrete(int n)
  *
  */
 
-void reset(int set) {
-	for (int i = 0; i < 16; i++) {
-		cache[set].data[i] = 0;
+
+void write_back(int tag, int set,int way, int words) {
+	int index = tag << 5;
+	if (set == 1) index += 16;
+	for (int i = 0; i < words; i++) {
+		if (memory[index + i] != cache[way].data[i]) memory[index + i] = cache[way].data[i]; //다르면 cahe data를 memory에 넣는다.
 	}
-	cache[set].tag = 0;
-	cache[set].timestamp = 0;
-	cache[set].valid = 0;
-	cache[set].dirty = 0;
 	return;
 }
 
@@ -166,54 +165,55 @@ int load_word(unsigned int addr)
 {
 	/* TODO: Implement your load_word function */
 	int nr_offset, offset;
-	int nr_index, index, set;
+	int nr_index, index, set,way;
 	int tag;
 	int count = 1;
-	int words = 1;
+	int words = 4;
 	int hit = 1;
-	for (int i = 0; i < nr_words_per_block; i++) { 
-		words *= 2;
-	}
-	addr = (addr / words) * words;
-	printf("%d\n", addr);
+	unsigned int block_addr;
+
+	words *= nr_words_per_block;
+
+	block_addr = (addr / words) * words;
 	nr_offset = log2_discrete(nr_words_per_block * 4);
 	nr_index = log2_discrete(nr_sets);
 	index = ((addr >> nr_offset) << (32 - nr_index)) >> (32 - nr_index);
 	tag = addr >> (nr_offset + nr_index);
-	set = index*nr_ways;
-
+	set = index;
+	way = index * nr_ways;;
 	while (true) {
-		if (cache[set].valid == 1) { // 이미 사용 중이라면
-			if (cache[set].tag == tag) {  // tag가 같다면
-				for (int j = 0; j < words; j++) {  // data가 같은지 확인한다. address가 같은지 확인한다. 
-					if (cache[set].data[j] != memory[addr + j]) { // 다르다면 miss
+		if (cache[way].valid == 1) { // 이미 사용중이라면
+			if (cache[way].tag == tag) {  // tag가 같다면
+				for (int j = 0; j < words; j++) { // data가 같은지 확인한다.
+					if (cache[way].data[j] != memory[block_addr + j]) {// 다르다면 miss
 						hit = 0;
 						break;
 					}
 				}
-				if (hit == 1) {  // 같다면 timestamp를 최신화하고 hit를 반환한다.
-					cache[set].timestamp = cycles;
+				if (hit == 1) { // 같다면 timestamp를 최신화하고 hit를 반환한다.
+					cache[way].timestamp = cycles;
 					return CACHE_HIT;
 				}
 			}
-			if (count == nr_ways){  // set이 꽉차있다면
-			for (int i = 0; i < nr_ways; i++) {
-				set = (cache[set].timestamp > cache[i].timestamp) ? i : set;  // timestamp가 가장 작은 것을 지운다. LRU방식 
+			if (count == nr_ways) {  // set이 꽉차있다면
+				for (int i = 0; i < nr_ways; i++) {
+					way = (cache[way].timestamp > cache[i].timestamp) ? i : way;  // timestamp가 가장 작은 것을 선택 LRU방식
+				}
+				break;
 			}
-			reset(set);  
-			break;
-		    }
-		else set++, count++;
+			else way++, count++;
 		}
 		else break;
 	}
-	cache[set].tag = tag;
+	cache[way].tag = tag;
+	printf("%d\n", words);
 	for (int i = 0; i < words; i++) {
-		cache[set].data[i] = memory[addr + i];
+		cache[way].data[i] = memory[block_addr + i];
 
-	}
-	cache[set].valid = 1;
-	cache[set].timestamp = cycles;
+	}													
+	cache[way].dirty = 0;
+	cache[way].valid = 1;
+	cache[way].timestamp = cycles;
 
 
 
@@ -240,6 +240,73 @@ int load_word(unsigned int addr)
 int store_word(unsigned int addr, unsigned int data)
 {
 	/* TODO: Implement your store_word function */
+	int nr_offset, offset;
+	int nr_index, index, set,way;
+	int nr_words;
+	int tag;
+	int count = 1;
+	int same = 0;
+	int words = 4;
+	unsigned int block_addr;
+	words *= nr_words_per_block;
+	int data_count = 1;
+	unsigned int data2 = data;
+
+	block_addr = (addr / words) * words;
+	nr_offset = log2_discrete(nr_words_per_block * 4);
+	offset = (addr << (32 - nr_offset)) >> (32 - nr_offset);
+	nr_index = log2_discrete(nr_sets);
+	index = ((addr >> nr_offset) << (32 - nr_index)) >> (32 - nr_index);
+	tag = addr >> (nr_offset + nr_index);
+	set = index;
+	way = index * nr_ways;;
+
+	while (true) {
+		if(count > nr_ways) {   //꽉 차있으면 timestamp가 가장 작은 것을 선택한다.
+			way -= 1;
+			for (int i = 0; i < nr_ways; i++) {
+				way = (cache[way].timestamp > cache[i].timestamp) ? i : way;  // timestamp가 가장 작은 것을 선택 LRU방식
+			}
+			write_back(cache[way].tag, set, way, words);
+			cache[way].valid = 0;
+		}
+
+		if (cache[way].valid == 1) { // 이미 넣은게 있다면 hit인지, write back해야 하는지 확인한다.
+			if (cache[way].tag == tag) { //tag가 같으면 hit
+				switch (cache[way].dirty) {
+				case 0: //dirty가 0이면 load만 되어있다.-> cache에만 update한다.
+					cache[way].dirty = 1;
+					break;
+				case 1: //dirty가 1이면 write-back;
+					write_back(cache[way].tag, set, way, words);
+					break;
+				}
+				for (int i = 0; i < nr_offset; i++) {
+					cache[way].data[offset + i] = (data << (i * 8)) >> 24;
+				}
+				cache[way].timestamp = cycles;
+				return CACHE_HIT;
+			}
+		}
+
+        else if (cache[way].valid == 0) { // 자리가 있다면 일단 lw하고 offset위치에 sw한다.
+			cache[way].tag = tag;              
+			for (int i = 0; i < words; i++) {
+				cache[way].data[i] = memory[block_addr + i];
+			}
+			cache[way].dirty = 1;
+			cache[way].valid = 1;
+			cache[way].timestamp = cycles;
+			for (int i = 0; i < nr_offset; i++) {
+				cache[way].data[offset + i] = (data << i * 8) >> 24;
+			}
+
+			break;
+		}
+	    way++, count++;
+	}
+
+
 
 	return CACHE_MISS;
 }
