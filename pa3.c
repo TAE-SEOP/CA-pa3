@@ -206,7 +206,6 @@ int load_word(unsigned int addr)
 		else break;
 	}
 	cache[way].tag = tag;
-	printf("%d\n", words);
 	for (int i = 0; i < words; i++) {
 		cache[way].data[i] = memory[block_addr + i];
 
@@ -265,7 +264,12 @@ int store_word(unsigned int addr, unsigned int data)
 		if(count > nr_ways) {   //꽉 차있으면 timestamp가 가장 작은 것을 선택한다.
 			way -= 1;
 			for (int i = 0; i < nr_ways; i++) {
-				way = (cache[way].timestamp > cache[i].timestamp) ? i : way;  // timestamp가 가장 작은 것을 선택 LRU방식
+				if (set == 1) {
+					way = (cache[way].timestamp > cache[i+nr_ways].timestamp) ? i+nr_ways : way;
+				}
+				else {
+					way = (cache[way].timestamp > cache[i].timestamp) ? i : way;  // timestamp가 가장 작은 것을 선택 LRU방식
+				}
 			}
 			write_back(cache[way].tag, set, way, words);
 			cache[way].valid = 0;
@@ -273,17 +277,11 @@ int store_word(unsigned int addr, unsigned int data)
 
 		if (cache[way].valid == 1) { // 이미 넣은게 있다면 hit인지, write back해야 하는지 확인한다.
 			if (cache[way].tag == tag) { //tag가 같으면 hit
-				switch (cache[way].dirty) {
-				case 0: //dirty가 0이면 load만 되어있다.-> cache에만 update한다.
-					cache[way].dirty = 1;
-					break;
-				case 1: //dirty가 1이면 write-back;
-					write_back(cache[way].tag, set, way, words);
-					break;
-				}
+			
 				for (int i = 0; i < nr_offset; i++) {
 					cache[way].data[offset + i] = (data << (i * 8)) >> 24;
 				}
+				cache[way].dirty = 1;
 				cache[way].timestamp = cycles;
 				return CACHE_HIT;
 			}
